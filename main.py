@@ -258,7 +258,8 @@ Contact the admin if you have any issues or suggestions!
             [InlineKeyboardButton("➕ Add Family Member", callback_data="admin_add_family")],
             [InlineKeyboardButton("📅 Send Survey Now", callback_data="admin_send_survey")],
             [InlineKeyboardButton("📈 Weekly Summary", callback_data="admin_weekly_summary")],
-            [InlineKeyboardButton("👥 Send Survey to Group", callback_data="admin_send_group_survey")]
+            [InlineKeyboardButton("👥 Send Survey to Group", callback_data="admin_send_group_survey")],
+            [InlineKeyboardButton("🧪 Test Callback", callback_data="test_callback")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -534,6 +535,9 @@ Let's plan the perfect week of meals! 🍳
                     )
                 except Exception as e:
                     logger.error(f"Failed to notify admin of submission: {e}")
+        
+        elif data == "test_callback":
+            await query.message.reply_text("✅ Callback test successful! Buttons are working.")
         
         elif data.startswith("admin_"):
             await self.handle_admin_callback(query, data)
