@@ -545,12 +545,10 @@ if __name__ == "__main__":
         bot = MealsBot()
         import asyncio
         
-        # Create new event loop for this thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        # Run the bot
-        loop.run_until_complete(bot.run())
+        # Simple approach for Railway deployment
+        logger.info("Starting bot with asyncio.run()")
+        asyncio.run(bot.run())
+            
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
         import traceback
