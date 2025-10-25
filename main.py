@@ -324,7 +324,10 @@ Let's plan the perfect week of meals! 🍳
                 ))
             keyboard.append([InlineKeyboardButton(f"📅 {day}", callback_data="day_header")] + day_buttons)
         
-        keyboard.append([InlineKeyboardButton("✅ Submit Survey", callback_data=f"submit_survey_{user_id}")])
+        keyboard.append([
+            InlineKeyboardButton("👀 Review Selection", callback_data=f"review_survey_{user_id}"),
+            InlineKeyboardButton("✅ Submit Survey", callback_data=f"submit_survey_{user_id}")
+        ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -406,6 +409,64 @@ Let's plan the perfect week of meals! 🍳
             
             new_reply_markup = InlineKeyboardMarkup(new_keyboard)
             await query.edit_message_reply_markup(reply_markup=new_reply_markup)
+        
+        elif data.startswith("review_survey_"):
+            # Handle survey review
+            target_user_id = int(data.split("_")[2])
+            
+            # Only allow the target user to review their survey
+            if user_id != target_user_id:
+                await query.message.reply_text("❌ You can only review your own survey.")
+                return
+            
+            conn = sqlite3.connect('meals_bot.db')
+            cursor = conn.cursor()
+            
+            week_start = self.get_week_start()
+            cursor.execute('''
+                SELECT meal_type, day, response
+                FROM meal_responses
+                WHERE user_id = ? AND week_start = ?
+                ORDER BY day, meal_type
+            ''', (target_user_id, week_start))
+            
+            responses = cursor.fetchall()
+            conn.close()
+            
+            if not responses:
+                await query.message.reply_text(
+                    "📝 **No meals selected yet!**\n\n"
+                    "Please select at least one meal before reviewing your survey."
+                )
+            else:
+                # Get user's name
+                conn = sqlite3.connect('meals_bot.db')
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT first_name FROM family_members WHERE user_id = ?
+                ''', (target_user_id,))
+                result = cursor.fetchone()
+                user_name = result[0] if result else "Family Member"
+                conn.close()
+                
+                review_text = f"👀 **Survey Review - {user_name}**\n"
+                review_text += f"**Week of {week_start}**\n\n"
+                
+                current_day = None
+                selected_count = 0
+                for meal_type, day, response in responses:
+                    if day != current_day:
+                        review_text += f"📅 **{day}:**\n"
+                        current_day = day
+                    
+                    if response:
+                        review_text += f"  ✅ {meal_type.title()}\n"
+                        selected_count += 1
+                
+                review_text += f"\n📊 **Total meals selected: {selected_count}**\n\n"
+                review_text += "Click 'Submit Survey' when you're ready, or continue selecting meals."
+                
+                await query.message.reply_text(review_text)
         
         elif data.startswith("submit_survey_"):
             # Handle survey submission
