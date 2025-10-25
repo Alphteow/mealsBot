@@ -593,15 +593,27 @@ Let's plan the perfect week of meals! 🍳
             
             summary_text += f"👤 **{name}**\n"
             
-            # Get responses for this user
+            # Get responses for this user with proper chronological ordering
             cursor.execute('''
                 SELECT meal_type, day, response
                 FROM meal_responses
                 WHERE user_id = ? AND week_start = ?
-                ORDER BY day, meal_type
             ''', (user_id, week_start))
             
             responses = cursor.fetchall()
+            
+            # Define proper day and meal order
+            day_order = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+            meal_order = ['breakfast', 'lunch', 'dinner']
+            
+            # Sort responses by day and meal order
+            def sort_key(response):
+                meal_type, day, _ = response
+                day_index = day_order.index(day) if day in day_order else 999
+                meal_index = meal_order.index(meal_type) if meal_type in meal_order else 999
+                return (day_index, meal_index)
+            
+            responses = sorted(responses, key=sort_key)
             
             if responses:
                 current_day = None
