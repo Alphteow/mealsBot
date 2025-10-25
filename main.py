@@ -74,37 +74,65 @@ class MealsBot:
         first_name = update.effective_user.first_name
         last_name = update.effective_user.last_name
         
-        # Add user to family members if not exists
+        # Check if user is already a family member
         conn = sqlite3.connect('meals_bot.db')
         cursor = conn.cursor()
         cursor.execute('''
-            INSERT OR IGNORE INTO family_members (user_id, username, first_name, last_name)
-            VALUES (?, ?, ?, ?)
-        ''', (user_id, username, first_name, last_name))
-        conn.commit()
-        conn.close()
+            SELECT is_active FROM family_members WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
         
-        welcome_message = f"""
-🍽️ Welcome to MealsBot, {first_name}!
+        if result:
+            if result[0]:  # User is active family member
+                welcome_message = f"""
+🍽️ Welcome back, {first_name}!
 
-This bot helps coordinate family meal planning. Here's what I can do:
-
-📅 **Weekly Surveys**: I'll send you a survey every week to check which meals you need
-🍳 **Meal Planning**: Help the house chef prepare meals accordingly
-👨‍👩‍👧‍👦 **Family Coordination**: Keep everyone informed about meal plans
+You're already registered as a family member. Here's what you can do:
 
 **Available Commands:**
-/start - Show this welcome message
+/survey - Request a meal survey
+/my_responses - View your recent responses
 /help - Show help information
-/survey - Manually trigger a meal survey
-/my_responses - View your recent meal responses
-/admin - Admin commands (admin only)
 
-The bot will automatically send weekly surveys every Monday at 9:00 AM. You can also request a survey anytime using /survey.
+The bot will automatically send weekly surveys every Monday at 9:00 AM.
 
-Let's make meal planning easier for your family! 🏠✨
-        """
+Let's plan your meals! 🍳
+                """
+            else:  # User was deactivated
+                welcome_message = f"""
+👋 Hi {first_name}!
+
+You were previously registered but have been removed from the family group. 
+Please contact the admin to be added back to the family meal planning.
+
+**Available Commands:**
+/help - Show help information
+                """
+        else:
+            # New user - only admin can add them
+            cursor.execute('''
+                INSERT INTO family_members (user_id, username, first_name, last_name, is_active)
+                VALUES (?, ?, ?, ?, 0)
+            ''', (user_id, username, first_name, last_name))
+            conn.commit()
+            
+            welcome_message = f"""
+👋 Hi {first_name}!
+
+Thanks for your interest in MealsBot! You're not yet registered as a family member.
+
+**To join the family meal planning:**
+1. Contact the admin to be added to the family group
+2. Once added, you'll receive weekly meal surveys
+3. You'll be able to use all bot features
+
+**Available Commands:**
+/help - Show help information
+
+**Note:** Only the admin can add family members for security.
+            """
         
+        conn.close()
         await update.message.reply_text(welcome_message)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -137,14 +165,45 @@ Contact the admin if you have any issues or suggestions!
     
     async def survey_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle the /survey command to manually trigger a meal survey."""
-        await self.send_meal_survey(update.effective_chat.id, update.effective_user.id)
+        user_id = update.effective_user.id
+        
+        # Check if user is an active family member
+        conn = sqlite3.connect('meals_bot.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT is_active FROM family_members WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if not result or not result[0]:
+            await update.message.reply_text(
+                "❌ You're not registered as an active family member.\n\n"
+                "Please contact the admin to be added to the family meal planning group."
+            )
+            return
+        
+        await self.send_meal_survey(update.effective_chat.id, user_id)
     
     async def my_responses_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show user's recent meal responses."""
         user_id = update.effective_user.id
         
+        # Check if user is an active family member
         conn = sqlite3.connect('meals_bot.db')
         cursor = conn.cursor()
+        cursor.execute('''
+            SELECT is_active FROM family_members WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+        
+        if not result or not result[0]:
+            await update.message.reply_text(
+                "❌ You're not registered as an active family member.\n\n"
+                "Please contact the admin to be added to the family meal planning group."
+            )
+            conn.close()
+            return
         
         # Get current week's responses
         week_start = self.get_week_start()
@@ -184,6 +243,7 @@ Contact the admin if you have any issues or suggestions!
         keyboard = [
             [InlineKeyboardButton("📊 View All Responses", callback_data="admin_view_responses")],
             [InlineKeyboardButton("👥 Manage Family Members", callback_data="admin_manage_family")],
+            [InlineKeyboardButton("➕ Add Family Member", callback_data="admin_add_family")],
             [InlineKeyboardButton("📅 Send Survey Now", callback_data="admin_send_survey")],
             [InlineKeyboardButton("📈 Weekly Summary", callback_data="admin_weekly_summary")],
             [InlineKeyboardButton("👥 Send Survey to Group", callback_data="admin_send_group_survey")]
@@ -395,12 +455,18 @@ Let's plan the perfect week of meals! 🍳
             await self.show_all_responses(query)
         elif data == "admin_manage_family":
             await self.manage_family_members(query)
+        elif data == "admin_add_family":
+            await self.show_pending_family_members(query)
         elif data == "admin_send_survey":
             await self.send_survey_to_all(query)
         elif data == "admin_weekly_summary":
             await self.show_weekly_summary(query)
         elif data == "admin_send_group_survey":
             await self.send_group_survey(query)
+        elif data.startswith("activate_"):
+            await self.activate_family_member(query, data)
+        elif data.startswith("deactivate_"):
+            await self.deactivate_family_member(query, data)
     
     async def show_all_responses(self, query):
         """Show all family members' responses for the current week."""
@@ -463,13 +529,14 @@ Let's plan the perfect week of meals! 🍳
         cursor.execute('''
             SELECT user_id, first_name, last_name, username, is_active
             FROM family_members
-            ORDER BY first_name
+            ORDER BY is_active DESC, first_name
         ''')
         
         members = cursor.fetchall()
         conn.close()
         
         members_text = "👥 **Family Members Management**\n\n"
+        keyboard = []
         
         for user_id, first_name, last_name, username, is_active in members:
             name = f"{first_name} {last_name}" if last_name else first_name
@@ -478,10 +545,22 @@ Let's plan the perfect week of meals! 🍳
             
             status = "🟢 Active" if is_active else "🔴 Inactive"
             members_text += f"• {name} - {status}\n"
+            
+            if is_active:
+                keyboard.append([
+                    InlineKeyboardButton(f"❌ Remove {first_name}", callback_data=f"deactivate_{user_id}")
+                ])
+            else:
+                keyboard.append([
+                    InlineKeyboardButton(f"✅ Activate {first_name}", callback_data=f"activate_{user_id}")
+                ])
         
-        members_text += "\n**Note:** Family members are automatically added when they use /start"
+        keyboard.append([InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_back")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await query.message.reply_text(members_text)
+        members_text += "\n**Select an action:**"
+        
+        await query.message.reply_text(members_text, reply_markup=reply_markup)
     
     async def send_survey_to_all(self, query):
         """Send survey to all active family members."""
@@ -560,6 +639,100 @@ Let's plan the perfect week of meals! 🍳
             f"📤 Group surveys sent to {sent_count} family members!\n\n"
             "Each family member can only modify their own responses. "
             "The surveys are personalized and secure."
+        )
+    
+    async def show_pending_family_members(self, query):
+        """Show pending family members waiting to be added."""
+        conn = sqlite3.connect('meals_bot.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT user_id, first_name, last_name, username
+            FROM family_members
+            WHERE is_active = 0
+            ORDER BY first_name
+        ''')
+        
+        pending_members = cursor.fetchall()
+        conn.close()
+        
+        if not pending_members:
+            await query.message.reply_text(
+                "✅ **No Pending Family Members**\n\n"
+                "All users who have contacted the bot are already active family members."
+            )
+            return
+        
+        members_text = "👥 **Pending Family Members**\n\n"
+        keyboard = []
+        
+        for user_id, first_name, last_name, username in pending_members:
+            name = f"{first_name} {last_name}" if last_name else first_name
+            if username:
+                name += f" (@{username})"
+            
+            members_text += f"• {name}\n"
+            keyboard.append([
+                InlineKeyboardButton(f"✅ Add {first_name}", callback_data=f"activate_{user_id}"),
+                InlineKeyboardButton(f"❌ Reject {first_name}", callback_data=f"deactivate_{user_id}")
+            ])
+        
+        keyboard.append([InlineKeyboardButton("🔙 Back to Admin Panel", callback_data="admin_back")])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.message.reply_text(
+            members_text + "\n**Select an action:**",
+            reply_markup=reply_markup
+        )
+    
+    async def activate_family_member(self, query, data):
+        """Activate a family member."""
+        user_id = int(data.split("_")[1])
+        
+        conn = sqlite3.connect('meals_bot.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE family_members SET is_active = 1 WHERE user_id = ?
+        ''', (user_id,))
+        
+        cursor.execute('''
+            SELECT first_name FROM family_members WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+        name = result[0] if result else "Family Member"
+        
+        conn.commit()
+        conn.close()
+        
+        await query.message.reply_text(
+            f"✅ **{name} has been added to the family!**\n\n"
+            f"They can now use /survey and receive weekly meal surveys."
+        )
+    
+    async def deactivate_family_member(self, query, data):
+        """Deactivate a family member."""
+        user_id = int(data.split("_")[1])
+        
+        conn = sqlite3.connect('meals_bot.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            UPDATE family_members SET is_active = 0 WHERE user_id = ?
+        ''', (user_id,))
+        
+        cursor.execute('''
+            SELECT first_name FROM family_members WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+        name = result[0] if result else "Family Member"
+        
+        conn.commit()
+        conn.close()
+        
+        await query.message.reply_text(
+            f"❌ **{name} has been removed from the family.**\n\n"
+            f"They will no longer receive surveys or have access to family features."
         )
     
     def get_week_start(self) -> str:
