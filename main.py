@@ -795,7 +795,9 @@ Let's plan the perfect week of meals! 🍳
     
     async def activate_family_member(self, query, data):
         """Activate a family member."""
+        logger.info(f"Activation callback received: {data}")
         user_id = int(data.split("_")[1])
+        logger.info(f"Extracted user_id: {user_id}")
         
         conn = sqlite3.connect('meals_bot.db')
         cursor = conn.cursor()
