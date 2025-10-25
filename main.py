@@ -544,6 +544,14 @@ if __name__ == "__main__":
     try:
         bot = MealsBot()
         import asyncio
-        asyncio.run(bot.run())
+        
+        # Create new event loop for this thread
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        # Run the bot
+        loop.run_until_complete(bot.run())
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
+        import traceback
+        traceback.print_exc()
