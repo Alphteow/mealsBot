@@ -541,6 +541,11 @@ Let's plan the perfect week of meals! 🍳
         elif data == "test_callback":
             await query.message.reply_text("✅ Callback test successful! Buttons are working.")
         
+        elif data.startswith("activate_"):
+            await self.activate_family_member(query, data)
+        elif data.startswith("deactivate_"):
+            await self.deactivate_family_member(query, data)
+        
         elif data.startswith("admin_"):
             await self.handle_admin_callback(query, data)
     
@@ -562,10 +567,6 @@ Let's plan the perfect week of meals! 🍳
             await self.show_weekly_summary(query)
         elif data == "admin_send_group_survey":
             await self.send_group_survey(query)
-        elif data.startswith("activate_"):
-            await self.activate_family_member(query, data)
-        elif data.startswith("deactivate_"):
-            await self.deactivate_family_member(query, data)
     
     async def show_all_responses(self, query):
         """Show all family members' responses for the current week."""
