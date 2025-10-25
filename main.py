@@ -387,18 +387,25 @@ Let's plan the perfect week of meals! 🍳
             conn.commit()
             conn.close()
             
-            # Update button text
+            # Create new keyboard with updated button text
             status = "✅" if new_response else "❌"
             button_text = f"{meal_type.title()[:3]} {status}"
             
-            # Find and update the button
+            # Recreate the keyboard with updated button
+            new_keyboard = []
             for row in query.message.reply_markup.inline_keyboard:
+                new_row = []
                 for button in row:
                     if button.callback_data == data:
-                        button.text = button_text
-                        break
+                        # Create new button with updated text
+                        new_button = InlineKeyboardButton(button_text, callback_data=data)
+                        new_row.append(new_button)
+                    else:
+                        new_row.append(button)
+                new_keyboard.append(new_row)
             
-            await query.edit_message_reply_markup(reply_markup=query.message.reply_markup)
+            new_reply_markup = InlineKeyboardMarkup(new_keyboard)
+            await query.edit_message_reply_markup(reply_markup=new_reply_markup)
         
         elif data.startswith("submit_survey_"):
             # Handle survey submission
