@@ -115,7 +115,7 @@ Let's make meal planning easier for your family! 🏠✨
 **How it works:**
 1. Every Monday at 9:00 AM, I'll send a survey asking about your meal needs
 2. You can select which meals you need for each day of the week
-3. The house chef gets a summary of everyone's needs
+3. The admin gets a summary of everyone's needs
 4. You can also request surveys manually anytime
 
 **Commands:**
@@ -185,7 +185,8 @@ Contact the admin if you have any issues or suggestions!
             [InlineKeyboardButton("📊 View All Responses", callback_data="admin_view_responses")],
             [InlineKeyboardButton("👥 Manage Family Members", callback_data="admin_manage_family")],
             [InlineKeyboardButton("📅 Send Survey Now", callback_data="admin_send_survey")],
-            [InlineKeyboardButton("📈 Weekly Summary", callback_data="admin_weekly_summary")]
+            [InlineKeyboardButton("📈 Weekly Summary", callback_data="admin_weekly_summary")],
+            [InlineKeyboardButton("👥 Send Survey to Group", callback_data="admin_send_group_survey")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -194,20 +195,60 @@ Contact the admin if you have any issues or suggestions!
             reply_markup=reply_markup
         )
     
+    async def group_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle the /group command to explain group functionality."""
+        group_info = """
+👥 **Group Functionality**
+
+This bot works great in family groups! Here's how:
+
+**For Family Groups:**
+• Add the bot to your family group chat
+• Admin can use `/admin` → "Send Survey to Group"
+• Each family member gets their own personalized survey
+• Only you can modify your own responses (secure!)
+
+**How It Works:**
+1. Admin sends group surveys using `/admin`
+2. Each family member sees their own survey
+3. Click buttons to select meals (✅/❌)
+4. Click "Submit Survey" when done
+5. Admin can view all responses
+
+**Commands:**
+/start - Register with the bot
+/survey - Get your personal survey
+/admin - Admin panel (admin only)
+/group - Show this group info
+
+**Privacy:** Each person can only see and modify their own responses!
+        """
+        await update.message.reply_text(group_info)
+    
     async def send_meal_survey(self, chat_id: int, user_id: int):
-        """Send a meal survey to a specific user."""
+        """Send a meal survey to a specific user or group."""
         week_start = self.get_week_start()
+        
+        # Get user's name for personalization
+        conn = sqlite3.connect('meals_bot.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT first_name FROM family_members WHERE user_id = ?
+        ''', (user_id,))
+        result = cursor.fetchone()
+        user_name = result[0] if result else "Family Member"
+        conn.close()
         
         message_text = f"""
 🍽️ **Weekly Meal Survey - Week of {week_start}**
 
-Please let us know which meals you'll need this week (Monday to Sunday):
+Hi {user_name}! Please let us know which meals you'll need this week:
 
 **Instructions:**
 • Click the buttons below to select your meals
-• ✅ = You need this meal
-• ❌ = You don't need this meal
-• You can change your responses anytime
+• Selected meals will show ✅
+• Unselected meals will show ❌
+• Click "Submit Survey" when done
 
 Let's plan the perfect week of meals! 🍳
         """
@@ -216,14 +257,14 @@ Let's plan the perfect week of meals! 🍳
         for day in self.days:
             day_buttons = []
             for meal_type in self.meal_types:
-                callback_data = f"meal_{day.lower()}_{meal_type}"
+                callback_data = f"meal_{day.lower()}_{meal_type}_{user_id}"
                 day_buttons.append(InlineKeyboardButton(
-                    f"{meal_type.title()[:3]}", 
+                    f"{meal_type.title()[:3]} ❌", 
                     callback_data=callback_data
                 ))
             keyboard.append([InlineKeyboardButton(f"📅 {day}", callback_data="day_header")] + day_buttons)
         
-        keyboard.append([InlineKeyboardButton("✅ Submit Survey", callback_data="submit_survey")])
+        keyboard.append([InlineKeyboardButton("✅ Submit Survey", callback_data=f"submit_survey_{user_id}")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -246,6 +287,12 @@ Let's plan the perfect week of meals! 🍳
             parts = data.split("_")
             day = parts[1].title()
             meal_type = parts[2]
+            target_user_id = int(parts[3]) if len(parts) > 3 else user_id
+            
+            # Only allow the target user to modify their responses
+            if user_id != target_user_id:
+                await query.message.reply_text("❌ You can only modify your own meal preferences.")
+                return
             
             # Toggle meal response
             conn = sqlite3.connect('meals_bot.db')
@@ -257,7 +304,7 @@ Let's plan the perfect week of meals! 🍳
             cursor.execute('''
                 SELECT response FROM meal_responses
                 WHERE user_id = ? AND week_start = ? AND day = ? AND meal_type = ?
-            ''', (user_id, week_start, day, meal_type))
+            ''', (target_user_id, week_start, day, meal_type))
             
             result = cursor.fetchone()
             current_response = result[0] if result else None
@@ -267,7 +314,7 @@ Let's plan the perfect week of meals! 🍳
                 cursor.execute('''
                     INSERT INTO meal_responses (user_id, week_start, meal_type, day, response)
                     VALUES (?, ?, ?, ?, ?)
-                ''', (user_id, week_start, meal_type, day, True))
+                ''', (target_user_id, week_start, meal_type, day, True))
                 new_response = True
             else:
                 # Toggle existing response
@@ -275,7 +322,7 @@ Let's plan the perfect week of meals! 🍳
                 cursor.execute('''
                     UPDATE meal_responses SET response = ?
                     WHERE user_id = ? AND week_start = ? AND day = ? AND meal_type = ?
-                ''', (new_response, user_id, week_start, day, meal_type))
+                ''', (new_response, target_user_id, week_start, day, meal_type))
             
             conn.commit()
             conn.close()
@@ -292,13 +339,16 @@ Let's plan the perfect week of meals! 🍳
                         break
             
             await query.edit_message_reply_markup(reply_markup=query.message.reply_markup)
-            
-            await query.message.reply_text(
-                f"📝 Updated: {day} {meal_type.title()} - {'Yes' if new_response else 'No'}"
-            )
         
-        elif data == "submit_survey":
+        elif data.startswith("submit_survey_"):
             # Handle survey submission
+            target_user_id = int(data.split("_")[2])
+            
+            # Only allow the target user to submit their survey
+            if user_id != target_user_id:
+                await query.message.reply_text("❌ You can only submit your own survey.")
+                return
+            
             conn = sqlite3.connect('meals_bot.db')
             cursor = conn.cursor()
             
@@ -306,7 +356,7 @@ Let's plan the perfect week of meals! 🍳
             cursor.execute('''
                 SELECT COUNT(*) FROM meal_responses
                 WHERE user_id = ? AND week_start = ?
-            ''', (user_id, week_start))
+            ''', (target_user_id, week_start))
             
             response_count = cursor.fetchone()[0]
             conn.close()
@@ -316,8 +366,18 @@ Let's plan the perfect week of meals! 🍳
                     "⚠️ Please select at least one meal before submitting!"
                 )
             else:
+                # Get user's name
+                conn = sqlite3.connect('meals_bot.db')
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT first_name FROM family_members WHERE user_id = ?
+                ''', (target_user_id,))
+                result = cursor.fetchone()
+                user_name = result[0] if result else "Family Member"
+                conn.close()
+                
                 await query.message.reply_text(
-                    "✅ **Survey Submitted Successfully!**\n\n"
+                    f"✅ **Survey Submitted Successfully, {user_name}!**\n\n"
                     "Thank you for your responses. The house chef will be notified of your meal preferences for this week. "
                     "You can update your responses anytime using /survey."
                 )
@@ -339,6 +399,8 @@ Let's plan the perfect week of meals! 🍳
             await self.send_survey_to_all(query)
         elif data == "admin_weekly_summary":
             await self.show_weekly_summary(query)
+        elif data == "admin_send_group_survey":
+            await self.send_group_survey(query)
     
     async def show_all_responses(self, query):
         """Show all family members' responses for the current week."""
@@ -472,6 +534,34 @@ Let's plan the perfect week of meals! 🍳
         
         await query.message.reply_text(summary_text)
     
+    async def send_group_survey(self, query):
+        """Send surveys to all active family members in the current chat (group)."""
+        chat_id = query.message.chat_id
+        
+        conn = sqlite3.connect('meals_bot.db')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT user_id FROM family_members WHERE is_active = 1
+        ''')
+        
+        active_members = cursor.fetchall()
+        conn.close()
+        
+        sent_count = 0
+        for (user_id,) in active_members:
+            try:
+                await self.send_meal_survey(chat_id, user_id)
+                sent_count += 1
+            except Exception as e:
+                logger.error(f"Failed to send group survey to user {user_id}: {e}")
+        
+        await query.message.reply_text(
+            f"📤 Group surveys sent to {sent_count} family members!\n\n"
+            "Each family member can only modify their own responses. "
+            "The surveys are personalized and secure."
+        )
+    
     def get_week_start(self) -> str:
         """Get the start date of the current week (Monday)."""
         today = datetime.now().date()
@@ -528,6 +618,7 @@ Let's plan the perfect week of meals! 🍳
         self.application.add_handler(CommandHandler("survey", self.survey_command))
         self.application.add_handler(CommandHandler("my_responses", self.my_responses_command))
         self.application.add_handler(CommandHandler("admin", self.admin_command))
+        self.application.add_handler(CommandHandler("group", self.group_command))
         self.application.add_handler(CallbackQueryHandler(self.handle_callback_query))
         
         logger.info("MealsBot started successfully!")
