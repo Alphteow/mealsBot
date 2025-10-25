@@ -157,7 +157,7 @@ This will check:
 3. **Interactive buttons** let users select meals for each day
 4. **Responses are saved** to the database in real-time
 5. **Admin can view** summaries and manage the family
-6. **House chef** gets organized meal planning data
+6. **admin** gets organized meal planning data
 
 ## Troubleshooting
 

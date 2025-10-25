@@ -9,6 +9,7 @@ from typing import Dict, List, Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
 from dotenv import load_dotenv
+from flask import Flask
 
 # Load environment variables
 load_dotenv()
@@ -19,6 +20,17 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+# Create Flask app for health checks
+app = Flask(__name__)
+
+@app.route('/')
+def health_check():
+    return "MealsBot is running!", 200
+
+@app.route('/health')
+def health():
+    return {"status": "healthy", "bot": "MealsBot"}, 200
 
 # Database setup
 def init_database():
@@ -506,7 +518,7 @@ Let's plan the perfect week of meals! 🍳
                 
                 await query.message.reply_text(
                     f"✅ **Survey Submitted Successfully, {user_name}!**\n\n"
-                    "Thank you for your responses. The house chef will be notified of your meal preferences for this week. "
+                    "Thank you for your responses. The admin will be notified of your meal preferences for this week. "
                     "You can update your responses anytime using /survey."
                 )
         
@@ -864,6 +876,11 @@ Let's plan the perfect week of meals! 🍳
         
         logger.info("MealsBot started successfully!")
         logger.info("Weekly surveys will be sent every Monday at 9:00 AM")
+        
+        # Start Flask server in a separate thread for health checks
+        import threading
+        flask_thread = threading.Thread(target=lambda: app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=False), daemon=True)
+        flask_thread.start()
         
         # Start the bot using the synchronous method
         self.application.run_polling()
