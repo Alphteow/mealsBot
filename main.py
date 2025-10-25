@@ -521,6 +521,19 @@ Let's plan the perfect week of meals! 🍳
                     "Thank you for your responses. The admin will be notified of your meal preferences for this week. "
                     "You can update your responses anytime using /survey."
                 )
+                
+                # Notify admin of new submission
+                try:
+                    await self.application.bot.send_message(
+                        chat_id=self.admin_user_id,
+                        text=f"📝 **New Survey Submission**\n\n"
+                             f"**User:** {user_name}\n"
+                             f"**Week:** {week_start}\n"
+                             f"**Meals Selected:** {response_count}\n\n"
+                             f"Use `/admin` → 'View All Responses' to see details."
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to notify admin of submission: {e}")
         
         elif data.startswith("admin_"):
             await self.handle_admin_callback(query, data)
@@ -655,16 +668,27 @@ Let's plan the perfect week of meals! 🍳
         conn.close()
         
         sent_count = 0
+        failed_count = 0
+        
         for (user_id,) in active_members:
             try:
                 await self.send_meal_survey(user_id, user_id)
                 sent_count += 1
             except Exception as e:
                 logger.error(f"Failed to send survey to user {user_id}: {e}")
+                failed_count += 1
         
-        await query.message.reply_text(
-            f"📤 Survey sent to {sent_count} family members!"
-        )
+        # Send detailed report to admin
+        report_text = f"📤 **Survey Distribution Complete!**\n\n"
+        report_text += f"✅ **Successfully sent:** {sent_count} surveys\n"
+        
+        if failed_count > 0:
+            report_text += f"❌ **Failed to send:** {failed_count} surveys\n"
+            report_text += f"*Some users may have blocked the bot or have privacy settings preventing messages.*\n"
+        
+        report_text += f"\n📊 **Total active family members:** {len(active_members)}"
+        
+        await query.message.reply_text(report_text)
     
     async def show_weekly_summary(self, query):
         """Show a summary of the week's meal needs."""
@@ -785,10 +809,26 @@ Let's plan the perfect week of meals! 🍳
         conn.commit()
         conn.close()
         
+        # Send confirmation to admin
         await query.message.reply_text(
             f"✅ **{name} has been added to the family!**\n\n"
-            f"They can now use /survey and receive weekly meal surveys."
+            f"They can now use /survey and receive weekly meal surveys.\n"
+            f"📱 They will be notified of their activation."
         )
+        
+        # Notify the user that they've been activated
+        try:
+            await self.application.bot.send_message(
+                chat_id=user_id,
+                text=f"🎉 **Welcome to the family, {name}!**\n\n"
+                     "You've been approved by the admin and can now use all bot features:\n\n"
+                     "• Use `/survey` to plan your meals\n"
+                     "• Receive weekly surveys automatically\n"
+                     "• View your responses with `/my_responses`\n\n"
+                     "Let's start planning your meals! 🍽️"
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {user_id} of activation: {e}")
     
     async def deactivate_family_member(self, query, data):
         """Deactivate a family member."""
@@ -810,10 +850,27 @@ Let's plan the perfect week of meals! 🍳
         conn.commit()
         conn.close()
         
+        # Send confirmation to admin
         await query.message.reply_text(
             f"❌ **{name} has been removed from the family.**\n\n"
-            f"They will no longer receive surveys or have access to family features."
+            f"They will no longer receive surveys or have access to family features.\n"
+            f"📱 They will be notified of their removal."
         )
+        
+        # Notify the user that they've been deactivated
+        try:
+            await self.application.bot.send_message(
+                chat_id=user_id,
+                text=f"👋 **Hello {name}**\n\n"
+                     "You have been removed from the family meal planning group by the admin.\n\n"
+                     "You will no longer receive:\n"
+                     "• Weekly meal surveys\n"
+                     "• Family meal planning updates\n"
+                     "• Access to family features\n\n"
+                     "If this was done in error, please contact the admin."
+            )
+        except Exception as e:
+            logger.error(f"Failed to notify user {user_id} of deactivation: {e}")
     
     def get_week_start(self) -> str:
         """Get the start date of the current week (Monday)."""
