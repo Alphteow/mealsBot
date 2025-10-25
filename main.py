@@ -257,9 +257,7 @@ Contact the admin if you have any issues or suggestions!
             [InlineKeyboardButton("👥 Manage Family Members", callback_data="admin_manage_family")],
             [InlineKeyboardButton("➕ Add Family Member", callback_data="admin_add_family")],
             [InlineKeyboardButton("📅 Send Survey Now", callback_data="admin_send_survey")],
-            [InlineKeyboardButton("📈 Weekly Summary", callback_data="admin_weekly_summary")],
-            [InlineKeyboardButton("👥 Send Survey to Group", callback_data="admin_send_group_survey")],
-            [InlineKeyboardButton("🧪 Test Callback", callback_data="test_callback")]
+            [InlineKeyboardButton("📈 Weekly Summary", callback_data="admin_weekly_summary")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -267,36 +265,6 @@ Contact the admin if you have any issues or suggestions!
             "🔧 **Admin Panel**\n\nSelect an option:",
             reply_markup=reply_markup
         )
-    
-    async def group_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Handle the /group command to explain group functionality."""
-        group_info = """
-👥 **Group Functionality**
-
-This bot works great in family groups! Here's how:
-
-**For Family Groups:**
-• Add the bot to your family group chat
-• Admin can use `/admin` → "Send Survey to Group"
-• Each family member gets their own personalized survey
-• Only you can modify your own responses (secure!)
-
-**How It Works:**
-1. Admin sends group surveys using `/admin`
-2. Each family member sees their own survey
-3. Click buttons to select meals (✅/❌)
-4. Click "Submit Survey" when done
-5. Admin can view all responses
-
-**Commands:**
-/start - Register with the bot
-/survey - Get your personal survey
-/admin - Admin panel (admin only)
-/group - Show this group info
-
-**Privacy:** Each person can only see and modify their own responses!
-        """
-        await update.message.reply_text(group_info)
     
     async def send_meal_survey(self, chat_id: int, user_id: int):
         """Send a meal survey to a specific user or group."""
@@ -560,9 +528,6 @@ Let's plan the perfect week of meals! 🍳
                 except Exception as e:
                     logger.error(f"Failed to notify admin of submission: {e}")
         
-        elif data == "test_callback":
-            await query.message.reply_text("✅ Callback test successful! Buttons are working.")
-        
         elif data.startswith("activate_"):
             await self.activate_family_member(query, data)
         elif data.startswith("deactivate_"):
@@ -587,8 +552,6 @@ Let's plan the perfect week of meals! 🍳
             await self.send_survey_to_all(query)
         elif data == "admin_weekly_summary":
             await self.show_weekly_summary(query)
-        elif data == "admin_send_group_survey":
-            await self.send_group_survey(query)
     
     async def show_all_responses(self, query):
         """Show all family members' responses for the current week."""
@@ -757,34 +720,6 @@ Let's plan the perfect week of meals! 🍳
         conn.close()
         
         await query.message.reply_text(summary_text)
-    
-    async def send_group_survey(self, query):
-        """Send surveys to all active family members in the current chat (group)."""
-        chat_id = query.message.chat_id
-        
-        conn = sqlite3.connect('meals_bot.db')
-        cursor = conn.cursor()
-        
-        cursor.execute('''
-            SELECT user_id FROM family_members WHERE is_active = 1
-        ''')
-        
-        active_members = cursor.fetchall()
-        conn.close()
-        
-        sent_count = 0
-        for (user_id,) in active_members:
-            try:
-                await self.send_meal_survey(chat_id, user_id)
-                sent_count += 1
-            except Exception as e:
-                logger.error(f"Failed to send group survey to user {user_id}: {e}")
-        
-        await query.message.reply_text(
-            f"📤 Group surveys sent to {sent_count} family members!\n\n"
-            "Each family member can only modify their own responses. "
-            "The surveys are personalized and secure."
-        )
     
     async def show_pending_family_members(self, query):
         """Show pending family members waiting to be added."""
@@ -971,7 +906,6 @@ Let's plan the perfect week of meals! 🍳
         self.application.add_handler(CommandHandler("survey", self.survey_command))
         self.application.add_handler(CommandHandler("my_responses", self.my_responses_command))
         self.application.add_handler(CommandHandler("admin", self.admin_command))
-        self.application.add_handler(CommandHandler("group", self.group_command))
         self.application.add_handler(CallbackQueryHandler(self.handle_callback_query))
         
         logger.info("MealsBot started successfully!")
