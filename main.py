@@ -358,6 +358,8 @@ Let's plan the perfect week of meals! 🍳
         data = query.data
         user_id = query.from_user.id
         
+        logger.info(f"Callback received: {data} from user {user_id}")
+        
         if data.startswith("meal_"):
             # Handle meal selection
             parts = data.split("_")
