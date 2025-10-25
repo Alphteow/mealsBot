@@ -518,8 +518,8 @@ Let's plan the perfect week of meals! 🍳
         scheduler_thread = threading.Thread(target=scheduler_loop, daemon=True)
         scheduler_thread.start()
     
-    async def run(self):
-        """Run the bot."""
+    def run_sync(self):
+        """Run the bot synchronously for Railway deployment."""
         self.application = Application.builder().token(self.bot_token).build()
         
         # Add handlers
@@ -530,24 +530,17 @@ Let's plan the perfect week of meals! 🍳
         self.application.add_handler(CommandHandler("admin", self.admin_command))
         self.application.add_handler(CallbackQueryHandler(self.handle_callback_query))
         
-        # Schedule weekly surveys (commented out for now due to compatibility issues)
-        # self.schedule_weekly_surveys()
-        # self.run_scheduler()
-        
         logger.info("MealsBot started successfully!")
         logger.info("Weekly surveys will be sent every Monday at 9:00 AM")
         
-        # Start the bot using the correct method
-        await self.application.run_polling()
+        # Start the bot using the synchronous method
+        self.application.run_polling()
 
 if __name__ == "__main__":
     try:
         bot = MealsBot()
-        import asyncio
-        
-        # Simple approach for Railway deployment
-        logger.info("Starting bot with asyncio.run()")
-        asyncio.run(bot.run())
+        logger.info("Starting MealsBot with synchronous method")
+        bot.run_sync()
             
     except Exception as e:
         logger.error(f"Failed to start bot: {e}")
