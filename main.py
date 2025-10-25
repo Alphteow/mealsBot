@@ -326,13 +326,35 @@ Hi {user_name}! Please let us know which meals you'll need this week:
 Let's plan the perfect week of meals! 🍳
         """
         
+        # Get existing responses for this week
+        conn = sqlite3.connect('meals_bot.db')
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT day, meal_type, response
+            FROM meal_responses
+            WHERE user_id = ? AND week_start = ?
+        ''', (user_id, week_start))
+        
+        existing_responses = {}
+        for day, meal_type, response in cursor.fetchall():
+            existing_responses[f"{day}_{meal_type}"] = response
+        
+        conn.close()
+        
+        # Create keyboard with meal selection buttons (restore previous selections)
         keyboard = []
         for day in self.days:
             day_buttons = []
             for meal_type in self.meal_types:
                 callback_data = f"meal_{day.lower()}_{meal_type}_{user_id}"
+                
+                # Check if this meal was previously selected
+                key = f"{day}_{meal_type}"
+                is_selected = existing_responses.get(key, False)
+                status = "✅" if is_selected else "❌"
+                
                 day_buttons.append(InlineKeyboardButton(
-                    f"{meal_type.title()[:3]} ❌", 
+                    f"{meal_type.title()[:3]} {status}", 
                     callback_data=callback_data
                 ))
             keyboard.append([InlineKeyboardButton(f"📅 {day}", callback_data="day_header")] + day_buttons)
